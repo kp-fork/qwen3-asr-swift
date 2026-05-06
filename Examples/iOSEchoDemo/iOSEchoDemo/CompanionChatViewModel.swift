@@ -77,6 +77,9 @@ final class CompanionChatViewModel {
     var loadProgress: Double = 0
     var loadingStatus = ""
     var errorMessage: String?
+    /// Which compute backend the loaded ASR encoder is using ("ANE", "GPU",
+    /// "CPU"). Updated when models load. Surfaced in the diagnostics view.
+    var asrBackend = "—"
 
     private var _modelsLoaded = false
     var modelsLoaded: Bool { _modelsLoaded }
@@ -155,6 +158,9 @@ final class CompanionChatViewModel {
                     }
                 }
             }.value
+            if let units = sttModel?.encoderComputeUnits {
+                asrBackend = Self.computeUnitsLabel(units)
+            }
 
             // Load TTS model
             loadingStatus = "Loading TTS..."
@@ -197,7 +203,15 @@ final class CompanionChatViewModel {
         config.minSilenceDuration = 0.6
         config.maxUtteranceDuration = 5.0   // Matches iOS Parakeet encoder (5s max, single fixed shape)
         config.maxResponseDuration = 5.0   // Cap TTS output to prevent repetition loops
-        config.eagerSTT = true  // Start transcribing during speech, don't wait for silence
+        // Disable eager STT — it transcribes mid-speech and discards the
+        // result if a new `speechStarted` fires before STT completes. On
+        // real iPhone audio (loud + Silero hysteresis), a 2-3 s utterance
+        // sometimes splits into 2.0 s + 0.7 s with the gap interpreted as
+        // a new turn, so the eager result for the first 2.0 s gets
+        // discarded and the second 0.7 s produces an empty transcription
+        // that strands the UI in "transcribing…". Latency cost is small
+        // for a voice echo demo.
+        config.eagerSTT = false
         config.warmupSTT = false
         // Short pre-roll — long pre-roll (2.0 s) of leading silence before
         // brief utterances flips Parakeet TDT v3's auto language detection
@@ -348,13 +362,16 @@ final class CompanionChatViewModel {
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             dbg("transcription: '\(trimmed)' lang=\(lang ?? "-") conf=\(String(format: "%.2f", conf))")
             guard !trimmed.isEmpty else {
-                // Empty transcription after force-cut → end cooldown so pipeline isn't stuck
+                // Any empty transcription strands the UI in "transcribing…"
+                // without a recovery path — reset state so the next
+                // utterance can come through. Force-cut additionally
+                // clears the cooldown lock that was set on speechEnded.
                 if wasForceCut {
                     wasForceCut = false
                     pipelineCooldownEnd = 0
-                    pipelineState = "listening"
                     dbg("empty transcription after force-cut — cooldown cleared")
                 }
+                pipelineState = "listening"
                 return
             }
             messages.append(ChatBubbleMessage(role: .user, text: trimmed))
@@ -559,6 +576,18 @@ final class CompanionChatViewModel {
             audioEngine = engine
         } catch {
             errorMessage = "Mic error: \(error.localizedDescription)"
+        }
+    }
+
+    /// Friendly label for an `MLComputeUnits` value, used to display the
+    /// ASR backend in the diagnostics view.
+    private static func computeUnitsLabel(_ u: MLComputeUnits) -> String {
+        switch u {
+        case .cpuOnly:               return "CPU"
+        case .cpuAndGPU:             return "GPU"
+        case .all:                   return "ANE"
+        case .cpuAndNeuralEngine:    return "ANE"
+        @unknown default:            return "?"
         }
     }
 

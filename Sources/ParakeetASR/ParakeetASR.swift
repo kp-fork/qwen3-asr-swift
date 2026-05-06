@@ -35,6 +35,10 @@ public class ParakeetASRModel {
     /// 2000, 3000]`) both work without any per-variant Swift logic.
     /// Internal access so tests can assert discovery results.
     let supportedMelLengths: [Int]
+    /// Compute units the encoder ended up using (after the prefer-ANE,
+    /// fall-back-to-GPU loader). Surfaced so the demo can show which
+    /// hardware backend is active.
+    public let encoderComputeUnits: MLComputeUnits
     /// Confidence from the last transcription (0.0–1.0).
     public private(set) var lastConfidence: Float = 0
     /// Per-word confidence scores from the last transcription.
@@ -46,7 +50,8 @@ public class ParakeetASRModel {
         decoder: MLModel?,
         joint: MLModel?,
         vocabulary: ParakeetVocabulary,
-        supportedMelLengths: [Int]
+        supportedMelLengths: [Int],
+        encoderComputeUnits: MLComputeUnits
     ) {
         self.config = config
         self.melPreprocessor = MelPreprocessor(config: config)
@@ -55,6 +60,7 @@ public class ParakeetASRModel {
         self.joint = joint
         self.vocabulary = vocabulary
         self.supportedMelLengths = supportedMelLengths
+        self.encoderComputeUnits = encoderComputeUnits
     }
 
     // MARK: - Warmup
@@ -310,27 +316,35 @@ public class ParakeetASRModel {
 
         // Step 5: Load CoreML models (encoder, decoder, joint — no preprocessor)
         progressHandler?(0.80, "Loading CoreML models...")
-        // On real devices and macOS: `cpuAndGPU` for the encoder. ANE
-        // compilation fails on some devices (e.g. iPhone 17 Pro
-        // "Unknown aneSubType") causing memory spike + fallback anyway.
-        // In the iOS Simulator the GPU/MPSGraph backend is unavailable
-        // ("Espresso compiled without MPSGraph engine"); the silent
-        // fallback returns 0 tokens for the INT8-quantized encoder, so
-        // pin to `cpuOnly` which uses the same kernels as the macOS test
-        // path and produces correct results.
+        // Compute-unit preference per platform:
+        //   iOS Simulator: pin `.cpuOnly`. The simulator has no MPSGraph
+        //     backend ("Espresso compiled without MPSGraph engine") — any
+        //     other choice silently falls back to a partial CPU/GPU mix
+        //     that returns 0 tokens for the INT8-quantized encoder.
+        //   iOS device: prefer `.cpuAndNeuralEngine` (3-10× faster +
+        //     more power-efficient when ANE picks up the model), fall
+        //     back to `.cpuAndGPU` if loading throws — some devices
+        //     report `numANECores: Unknown aneSubType` and ANE
+        //     compilation fails for INT8 encoders on those.
+        //   macOS: pin `.cpuAndGPU`. Mac ANE has a different generation
+        //     than iOS A-series and SIGSEGVs when loading this INT8
+        //     encoder (observed in E2E tests). Sticking with the
+        //     established GPU path keeps test runs reliable.
         #if targetEnvironment(simulator)
-        let computeUnits: MLComputeUnits = .cpuOnly
+        let computeUnitsToTry: [MLComputeUnits] = [.cpuOnly]
+        #elseif os(iOS)
+        let computeUnitsToTry: [MLComputeUnits] = [.cpuAndNeuralEngine, .cpuAndGPU]
         #else
-        let computeUnits: MLComputeUnits = .cpuAndGPU
+        let computeUnitsToTry: [MLComputeUnits] = [.cpuAndGPU]
         #endif
-        let encoder = try loadCoreMLModel(
-            name: "encoder", from: resolvedCacheDir, computeUnits: computeUnits)
+        let (encoder, encoderUnits) = try loadCoreMLModelWithFallback(
+            name: "encoder", from: resolvedCacheDir, computeUnitsToTry: computeUnitsToTry)
         progressHandler?(0.90, "Loading decoder...")
-        let decoder = try loadCoreMLModel(
-            name: "decoder", from: resolvedCacheDir, computeUnits: computeUnits)
+        let (decoder, _) = try loadCoreMLModelWithFallback(
+            name: "decoder", from: resolvedCacheDir, computeUnitsToTry: computeUnitsToTry)
         progressHandler?(0.95, "Loading joint network...")
-        let joint = try loadCoreMLModel(
-            name: "joint", from: resolvedCacheDir, computeUnits: computeUnits)
+        let (joint, _) = try loadCoreMLModelWithFallback(
+            name: "joint", from: resolvedCacheDir, computeUnitsToTry: computeUnitsToTry)
 
         let supportedMelLengths = discoverSupportedMelLengths(from: encoder)
         AudioLog.modelLoading.info("Parakeet encoder accepts mel frame counts: \(supportedMelLengths)")
@@ -344,7 +358,8 @@ public class ParakeetASRModel {
             decoder: decoder,
             joint: joint,
             vocabulary: vocabulary,
-            supportedMelLengths: supportedMelLengths
+            supportedMelLengths: supportedMelLengths,
+            encoderComputeUnits: encoderUnits
         )
     }
 
@@ -393,6 +408,32 @@ public class ParakeetASRModel {
         }
     }
 
+    /// Load a compiled CoreML model, trying compute-unit preferences in
+    /// order until one loads successfully. Returns `(model, units)` so
+    /// the caller knows which backend actually picked up the model —
+    /// e.g. ANE on devices where it's supported, GPU on devices where
+    /// ANE compilation fails (`Unknown aneSubType`).
+    private static func loadCoreMLModelWithFallback(
+        name: String,
+        from directory: URL,
+        computeUnitsToTry: [MLComputeUnits]
+    ) throws -> (model: MLModel, units: MLComputeUnits) {
+        var lastError: Error?
+        for computeUnits in computeUnitsToTry {
+            do {
+                let model = try loadCoreMLModel(
+                    name: name, from: directory, computeUnits: computeUnits)
+                return (model, computeUnits)
+            } catch {
+                lastError = error
+                AudioLog.modelLoading.notice(
+                    "Loading \(name) on \(String(describing: computeUnits)) failed: \(error.localizedDescription) — trying next compute unit")
+            }
+        }
+        throw lastError ?? AudioModelError.modelLoadFailed(
+            modelId: name, reason: "All compute-unit options failed: \(computeUnitsToTry)")
+    }
+
     /// Load a compiled CoreML model from a `.mlmodelc` directory.
     private static func loadCoreMLModel(
         name: String,
@@ -411,7 +452,7 @@ public class ParakeetASRModel {
 
         do {
             let model = try MLModel(contentsOf: modelURL, configuration: mlConfig)
-            AudioLog.modelLoading.debug("Loaded CoreML model: \(name) (compute: \(String(describing: computeUnits)))")
+            AudioLog.modelLoading.info("Loaded CoreML model: \(name) (compute: \(String(describing: computeUnits)))")
             return model
         } catch {
             throw AudioModelError.modelLoadFailed(
