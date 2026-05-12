@@ -49,12 +49,30 @@ final class WhisperMelExtractor {
         let fMax: Float = Float(sampleRate) / 2.0
         let nBins = paddedFFT / 2 + 1
 
+        // s3tokenizer uses `librosa.filters.mel(sr=16000, n_fft=400, n_mels=128)`,
+        // i.e. librosa's default = **Slaney** mel scale (NOT HTK). The HTK
+        // formula in Qwen3ASR.WhisperFeatureExtractor was correct for that
+        // model, but produces a different filterbank for s3tokenizer and was
+        // costing us ~50% relative error vs upstream.
         func hzToMel(_ hz: Float) -> Float {
-            // HTK formula (Slaney = false in librosa would be different)
-            return 2595.0 * log10(1.0 + hz / 700.0)
+            let fSp: Float = 200.0 / 3.0
+            let minLogHz: Float = 1_000
+            let minLogMel: Float = minLogHz / fSp           // 15
+            let logStep: Float = log(6.4) / 27.0
+            if hz < minLogHz {
+                return hz / fSp
+            }
+            return minLogMel + log(hz / minLogHz) / logStep
         }
         func melToHz(_ mel: Float) -> Float {
-            return 700.0 * (pow(10.0, mel / 2595.0) - 1.0)
+            let fSp: Float = 200.0 / 3.0
+            let minLogHz: Float = 1_000
+            let minLogMel: Float = minLogHz / fSp           // 15
+            let logStep: Float = log(6.4) / 27.0
+            if mel < minLogMel {
+                return fSp * mel
+            }
+            return minLogHz * exp(logStep * (mel - minLogMel))
         }
 
         var fftFreqs = [Float](repeating: 0, count: nBins)
@@ -160,10 +178,14 @@ final class WhisperMelExtractor {
                 }
             }
             let base = frame * nBins
-            magnitude[base] = splitReal[0] * splitReal[0]
-            magnitude[base + halfPadded] = splitImag[0] * splitImag[0]
+            // vDSP_fft_zrip scales non-DC/non-Nyquist bins by 2x relative to a
+            // standard DFT. We need to compensate so the mel values match a
+            // torch.stft-based reference. For power (|x|²), the correction is /4.
+            magnitude[base] = splitReal[0] * splitReal[0]                 // DC, no scaling
+            magnitude[base + halfPadded] = splitImag[0] * splitImag[0]    // Nyquist, no scaling
             for k in 1..<halfPadded {
-                magnitude[base + k] = splitReal[k] * splitReal[k] + splitImag[k] * splitImag[k]
+                let p = splitReal[k] * splitReal[k] + splitImag[k] * splitImag[k]
+                magnitude[base + k] = p * 0.25
             }
         }
 

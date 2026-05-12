@@ -80,6 +80,16 @@ extension CosyVoiceTTSModel {
         let flowExtractor = FlowMelExtractor()
         var promptFeat = flowExtractor.extract(audio24k)                  // [1, 80, T_mel50]
 
+        // Debug dump for the Python-vs-Swift diff. Activated by
+        // COSY_DEBUG_DUMP_DIR=<dir> — writes raw binary float32 / int32 files
+        // and exits the calling pipeline at the natural break (caller decides).
+        // Safe to leave in for now; no-op unless the env var is set.
+        if let dumpDir = ProcessInfo.processInfo.environment["COSY_DEBUG_DUMP_DIR"] {
+            CosyVoiceDebugDump.tryWrite(whisperMel, name: "swift_whisper_mel", in: dumpDir)
+            CosyVoiceDebugDump.tryWrite(promptToken, name: "swift_fsq_codes", in: dumpDir)
+            CosyVoiceDebugDump.tryWrite(promptFeat, name: "swift_flow_mel", in: dumpDir)
+        }
+
         // Align lengths: the flow upsamples promptToken by tokenMelRatio (= 2)
         // and assumes prompt_feat has exactly that many frames. Truncate or pad
         // the mel to match. In practice the two extractors are tightly aligned
@@ -128,6 +138,44 @@ extension CosyVoiceTTSModel {
             promptFeat: voiceProfile.promptFeat,
             verbose: verbose
         )
+    }
+}
+
+// MARK: - Debug dump (env-var gated)
+
+/// Tiny helper that writes MLX tensors as `<name>.bin` (raw little-endian
+/// float32 or int32) + `<name>.shape.json` (JSON array of dim sizes) so a
+/// Python sidecar can `np.fromfile(...).reshape(shape)` and diff against
+/// upstream. Activated by setting `COSY_DEBUG_DUMP_DIR=<dir>`.
+enum CosyVoiceDebugDump {
+    static func tryWrite(_ array: MLXArray, name: String, in dir: String) {
+        let fm = FileManager.default
+        try? fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let shape = array.shape
+        let shapeJSON = "[" + shape.map(String.init).joined(separator: ",") + "]"
+        let dtype = array.dtype
+        let dtypeStr: String
+        let bytes: Data
+        switch dtype {
+        case .float32:
+            dtypeStr = "float32"
+            let flat = array.reshaped(-1).asArray(Float.self)
+            bytes = flat.withUnsafeBufferPointer { Data(buffer: $0) }
+        case .int32:
+            dtypeStr = "int32"
+            let flat = array.reshaped(-1).asArray(Int32.self)
+            bytes = flat.withUnsafeBufferPointer { Data(buffer: $0) }
+        default:
+            // Cast bf16/fp16 to fp32 for the dump.
+            dtypeStr = "float32"
+            let flat = array.asType(.float32).reshaped(-1).asArray(Float.self)
+            bytes = flat.withUnsafeBufferPointer { Data(buffer: $0) }
+        }
+        let binPath = "\(dir)/\(name).bin"
+        try? bytes.write(to: URL(fileURLWithPath: binPath))
+        let meta = "{\"shape\":\(shapeJSON),\"dtype\":\"\(dtypeStr)\"}\n"
+        try? meta.write(toFile: "\(dir)/\(name).meta.json", atomically: true, encoding: .utf8)
+        print("  [debug-dump] \(name) shape=\(shape) dtype=\(dtypeStr) → \(binPath)")
     }
 }
 

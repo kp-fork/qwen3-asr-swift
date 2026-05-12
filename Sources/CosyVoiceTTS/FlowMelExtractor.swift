@@ -192,15 +192,15 @@ final class FlowMelExtractor {
                 }
             }
             let base = frame * nBins
-            // DC: |real| (Nyquist packed in imagp[0]; both are purely real).
-            // Matcha's `sqrt(pow²+ε)` is equivalent to `sqrt(re²+im²+ε)`.
-            let epsMag: Float = sqrt(1e-9)
-            magnitude[base] = sqrt(splitReal[0] * splitReal[0] + 1e-9)
-            magnitude[base + halfPadded] = sqrt(splitImag[0] * splitImag[0] + 1e-9)
-            _ = epsMag
+            // Matcha computes `sqrt(spec.pow(2).sum(-1) + 1e-9)` = magnitude
+            // with an epsilon floor. vDSP_fft_zrip scales non-DC/non-Nyquist
+            // bins by 2x relative to a standard DFT, so we divide those by 2
+            // before taking the magnitude.
+            magnitude[base] = sqrt(splitReal[0] * splitReal[0] + 1e-9)               // DC
+            magnitude[base + halfPadded] = sqrt(splitImag[0] * splitImag[0] + 1e-9)  // Nyquist
             for k in 1..<halfPadded {
-                let re = splitReal[k]
-                let im = splitImag[k]
+                let re = splitReal[k] * 0.5
+                let im = splitImag[k] * 0.5
                 magnitude[base + k] = sqrt(re * re + im * im + 1e-9)
             }
         }
