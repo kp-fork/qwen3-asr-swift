@@ -270,21 +270,33 @@ public final class CosyVoiceTTSModel {
     /// The text embedding table (151936 entries) includes this trained embedding at index 151646.
     private static let endOfPromptToken: Int32 = 151646
 
+    /// System-prompt frame that upstream uses in every official example.
+    /// Custom style instructions are *appended* to this frame, not substituted
+    /// for it — otherwise the model treats the instruction as content to speak.
+    private static let assistantPrefix = "You are a helpful assistant."
+
     /// Format and tokenize text for CosyVoice3 LLM.
     ///
-    /// CosyVoice3 requires the text format: `{instruction}<|endofprompt|>{text_to_synthesize}`
-    /// The `<|endofprompt|>` token (ID 151646) marks the boundary between instruction and content.
+    /// Upstream training format: `"You are a helpful assistant. {style}<|endofprompt|>{text}"`.
+    /// Stripping the assistant prefix pushes the model out of distribution and it
+    /// reads the style instruction aloud instead of using it as conditioning.
     private func tokenizeText(
         _ text: String, language: String,
         instruction: String = "You are a helpful assistant."
     ) -> [Int32] {
-        // Encode instruction prefix
-        let instructionTokens = tokenizer.encode(instruction).map { Int32($0) }
+        let framedInstruction: String
+        let trimmed = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed == Self.assistantPrefix {
+            framedInstruction = Self.assistantPrefix
+        } else if trimmed.hasPrefix(Self.assistantPrefix) {
+            framedInstruction = trimmed
+        } else {
+            framedInstruction = "\(Self.assistantPrefix) \(trimmed)"
+        }
 
-        // Encode text to synthesize
+        let instructionTokens = tokenizer.encode(framedInstruction).map { Int32($0) }
         let textTokens = tokenizer.encode(text).map { Int32($0) }
 
-        // Concatenate: [instruction_tokens, <|endofprompt|>, text_tokens]
         return instructionTokens + [Self.endOfPromptToken] + textTokens
     }
 }
