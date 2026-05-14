@@ -100,11 +100,15 @@ private func rotateHalf(_ x: MLXArray) -> MLXArray {
 private func applyRotaryPosEmb(
     q: MLXArray, k: MLXArray, cos: MLXArray, sin: MLXArray
 ) -> (MLXArray, MLXArray) {
+    // q / k arrive as (B, L, H, D); cos / sin as (L, D). Expand to
+    // (1, L, 1, D) so they broadcast across batch and heads.
+    let cosExpanded = cos.expandedDimensions(axis: 0).expandedDimensions(axis: 2)
+    let sinExpanded = sin.expandedDimensions(axis: 0).expandedDimensions(axis: 2)
     let originalDType = q.dtype
     let q = q.asType(.float32)
     let k = k.asType(.float32)
-    let qEmbed = (q * cos) + (rotateHalf(q) * sin)
-    let kEmbed = (k * cos) + (rotateHalf(k) * sin)
+    let qEmbed = (q * cosExpanded) + (rotateHalf(q) * sinExpanded)
+    let kEmbed = (k * cosExpanded) + (rotateHalf(k) * sinExpanded)
     return (qEmbed.asType(originalDType), kEmbed.asType(originalDType))
 }
 
@@ -135,17 +139,13 @@ private func voxCPM2InitLog(_ message: String) {
 
 @inline(__always)
 func zeroLinear(_ inputDimensions: Int, _ outputDimensions: Int, bias: Bool = true) -> Linear {
-    voxCPM2InitLog("zeroLinear start (\(outputDimensions), \(inputDimensions), bias=\(bias))")
-    let weight = MLXArray(
-        Array(repeating: Float(0.0), count: outputDimensions * inputDimensions),
-        [outputDimensions, inputDimensions]
-    )
-    voxCPM2InitLog("zeroLinear weight")
-    let biasArray = bias ? MLXArray(Array(repeating: Float(0.0), count: outputDimensions), [outputDimensions]) : nil
-    if bias {
-        voxCPM2InitLog("zeroLinear bias")
-    }
-    return Linear(weight: weight, bias: biasArray)
+    // Use Linear's standard init (random weights) — the actual weights are
+    // overwritten by the safetensors load. Earlier we tried zero-initialising
+    // via the designated `init(weight:bias:)` to save memory, but update
+    // (parameters:) silently failed to overwrite those arrays, leaving every
+    // Linear at exactly zero post-load. The random-init path works because
+    // MLX correctly walks the items() reflection in that case.
+    return Linear(inputDimensions, outputDimensions, bias: bias)
 }
 
 @inline(__always)
@@ -273,16 +273,19 @@ public final class MiniCPMAttention: Module {
         keys = keys.reshaped(batch, seqLen, numKVHeads, headDim)
         values = values.reshaped(batch, seqLen, numKVHeads, headDim)
 
-        queries = queries.transposed(0, 2, 1, 3)
-        keys = keys.transposed(0, 2, 1, 3)
-        values = values.transposed(0, 2, 1, 3)
-
+        // RoPE is applied while q/k still have layout (B, L, H, D) — the cos/sin
+        // tables broadcast as (1, L, 1, D) and need the seq dim at axis 1, not
+        // axis 2. Apply the rotary embedding first, then transpose to head-first.
         if let rope {
             let offset = cache?.0.dim(2) ?? 0
             let positionIds = MLXArray(0..<Int32(seqLen)) + Int32(offset)
             let (cos, sin) = rope(positionIds)
             (queries, keys) = applyRotaryPosEmb(q: queries, k: keys, cos: cos, sin: sin)
         }
+
+        queries = queries.transposed(0, 2, 1, 3)
+        keys = keys.transposed(0, 2, 1, 3)
+        values = values.transposed(0, 2, 1, 3)
 
         // Mirror the upstream MPS safeguard: SDPA behaves more reliably when
         // q/k/v are materialized into contiguous buffers after the transpose.

@@ -212,12 +212,22 @@ public final class VoxCPM2TTSModel: Module {
         try model.loadWithDiagnostics("loadWeights(from:)") {
             try model.loadWeights(from: modelCacheDir)
         }
+        if ProcessInfo.processInfo.environment["VOXCPM2_DEBUG_WLOAD"] == "1" {
+            let q = model.base_lm.layers[0].selfAttn.qProj.weight
+            let mAbs = q.abs().mean().item(Float.self)
+            print("[VoxCPM2 WLOAD pre-promote] base_lm L0 q_proj mean_abs=\(mAbs) dtype=\(q.dtype)")
+        }
         // Upstream promotes low-precision VoxCPM2 runtime dtypes to float32 on
         // Apple Silicon because bf16/fp16 can glitch the diffusion loop.
         if Self.shouldPromoteRuntimeParametersToFloat32 {
             model.promoteRuntimeParametersToFloat32()
         } else {
             model.audio_vae.castParametersToFloat32()
+        }
+        if ProcessInfo.processInfo.environment["VOXCPM2_DEBUG_WLOAD"] == "1" {
+            let q = model.base_lm.layers[0].selfAttn.qProj.weight
+            let mAbs = q.abs().mean().item(Float.self)
+            print("[VoxCPM2 WLOAD post-promote] base_lm L0 q_proj mean_abs=\(mAbs) dtype=\(q.dtype)")
         }
 
         progressHandler?(0.98, "Evaluating parameters...")
