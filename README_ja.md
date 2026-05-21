@@ -37,6 +37,7 @@ Mac・iOS向けのオンデバイス音声認識・合成・理解。Apple Silic
 - **[PersonaPlex](https://soniqo.audio/ja/guides/respond)** — 全二重音声間会話（7B、音声入力 → 音声出力、18種類のボイスプリセット）
 - **[DeepFilterNet3](https://soniqo.audio/ja/guides/denoise)** — リアルタイムノイズ抑制（2.1Mパラメーター、48 kHz）
 - **[音源分離](https://soniqo.audio/ja/guides/separate)** — Open-Unmix による音楽音源分離（UMX-HQ / UMX-L、4 ステム：ボーカル／ドラム／ベース／その他、44.1 kHz ステレオ）
+- **[MAGNeT](https://soniqo.audio/ja/guides/compose)** — テキスト→音楽生成（Meta MAGNeT Small 300M / Medium 1.5B、MLX INT4/INT8、30 秒 32 kHz モノラル、マスク並列デコーディング）
 - **[ウェイクワード](https://soniqo.audio/ja/guides/wake-word)** — オンデバイスのキーワード検出（KWS Zipformer 3M、CoreML、リアルタイムの26倍、キーワードリスト設定可能）
 - **[VAD](https://soniqo.audio/ja/guides/vad)** — 音声区間検出（Sileroストリーミング、Pyannoteオフライン、FireRedVAD 100以上の言語）
 - **[話者ダイアライゼーション](https://soniqo.audio/ja/guides/diarize)** — 誰がいつ話したか（Pyannoteパイプライン、Neural Engine上のエンドツーエンドSortformer）
@@ -110,7 +111,7 @@ struct DictateView: View {
 
 `SpeechUI` には `TranscriptionView`（確定 + 部分）と `TranscriptionStore`（ストリーミングASRアダプター）のみが含まれます。音声の可視化や再生には AVFoundation をお使いください。
 
-利用可能なSPMプロダクト：`Qwen3ASR`、`Qwen3TTS`、`Qwen3TTSCoreML`、`ParakeetASR`、`ParakeetStreamingASR`、`NemotronStreamingASR`、`OmnilingualASR`、`KokoroTTS`、`VibeVoiceTTS`、`CosyVoiceTTS`、`VoxCPM2TTS`、`PersonaPlex`、`SpeechVAD`、`SpeechEnhancement`、`SourceSeparation`、`Qwen3Chat`、`SpeechCore`、`SpeechUI`、`AudioCommon`。
+利用可能なSPMプロダクト：`Qwen3ASR`、`Qwen3TTS`、`Qwen3TTSCoreML`、`ParakeetASR`、`ParakeetStreamingASR`、`NemotronStreamingASR`、`OmnilingualASR`、`KokoroTTS`、`VibeVoiceTTS`、`CosyVoiceTTS`、`VoxCPM2TTS`、`MAGNeTMusicGen`、`PersonaPlex`、`SpeechVAD`、`SpeechEnhancement`、`SourceSeparation`、`Qwen3Chat`、`SpeechCore`、`SpeechUI`、`AudioCommon`。
 
 ## モデル
 
@@ -138,6 +139,7 @@ struct DictateView: View {
 | [Sortformer](https://soniqo.audio/ja/guides/diarize) | ダイアライゼーション（E2E） | CoreML (ANE) | — | 言語非依存 |
 | [DeepFilterNet3](https://soniqo.audio/ja/guides/denoise) | 音声強調 | CoreML | 2.1M | 言語非依存 |
 | [Open-Unmix](https://soniqo.audio/ja/guides/separate) | 音源分離 | MLX | 8.6M | Agnostic |
+| [MAGNeT](https://soniqo.audio/ja/guides/compose) | テキスト → 音楽 (30 秒 @ 32 kHz) | MLX | 300M / 1.5B (int4/int8) | 英語プロンプト |
 | [WeSpeaker](https://soniqo.audio/ja/guides/embed-speaker) | 話者埋め込み | MLX、CoreML | 6.6M | 言語非依存 |
 
 ## インストール
@@ -189,6 +191,7 @@ import PersonaPlex          // 全二重音声間変換
 import SpeechVAD            // VAD + 話者ダイアライゼーション + 埋め込み
 import SpeechEnhancement    // ノイズ抑制
 import SourceSeparation     // 音楽音源分離（Open-Unmix、4 ステム）
+import MAGNeTMusicGen      // テキスト→音楽生成（30 秒、32 kHz）
 import SpeechUI             // ストリーミングトランスクリプト用SwiftUIコンポーネント
 import AudioCommon          // 共有プロトコルとユーティリティ
 ```
@@ -358,8 +361,8 @@ speech-swift はモデルごとに1つのSPMターゲットに分割されてお
 **[バックエンド、メモリ表、モジュールマップ付きの完全なアーキテクチャ図 → soniqo.audio/architecture](https://soniqo.audio/ja/architecture)** · **[APIリファレンス → soniqo.audio/api](https://soniqo.audio/ja/api)** · **[ベンチマーク → soniqo.audio/benchmarks](https://soniqo.audio/ja/benchmarks)**
 
 ローカルドキュメント（リポジトリ内）：
-- **モデル：** [Qwen3-ASR](docs/models/asr-model.md) · [Qwen3-TTS](docs/models/tts-model.md) · [CosyVoice](docs/models/cosyvoice-tts.md) · [Kokoro](docs/models/kokoro-tts.md) · [VibeVoice](docs/models/vibevoice.md) · [Parakeet TDT](docs/models/parakeet-asr.md) · [Parakeet Streaming](docs/models/parakeet-streaming-asr.md) · [Nemotron Streaming](docs/models/nemotron-streaming.md) · [Omnilingual ASR](docs/models/omnilingual-asr.md) · [PersonaPlex](docs/models/personaplex.md) · [FireRedVAD](docs/models/fireredvad.md) · [Source Separation](docs/models/source-separation.md)
-- **推論：** [Qwen3-ASR](docs/inference/qwen3-asr-inference.md) · [Parakeet TDT](docs/inference/parakeet-asr-inference.md) · [Parakeet Streaming](docs/inference/parakeet-streaming-asr-inference.md) · [Nemotron Streaming](docs/inference/nemotron-streaming-inference.md) · [Omnilingual ASR](docs/inference/omnilingual-asr-inference.md) · [TTS](docs/inference/qwen3-tts-inference.md) · [VibeVoice](docs/inference/vibevoice-inference.md) · [Forced Aligner](docs/inference/forced-aligner.md) · [Silero VAD](docs/inference/silero-vad.md) · [話者ダイアライゼーション](docs/inference/speaker-diarization.md) · [音声強調](docs/inference/speech-enhancement.md)
+- **モデル：** [Qwen3-ASR](docs/models/asr-model.md) · [Qwen3-TTS](docs/models/tts-model.md) · [CosyVoice](docs/models/cosyvoice-tts.md) · [Kokoro](docs/models/kokoro-tts.md) · [VibeVoice](docs/models/vibevoice.md) · [Parakeet TDT](docs/models/parakeet-asr.md) · [Parakeet Streaming](docs/models/parakeet-streaming-asr.md) · [Nemotron Streaming](docs/models/nemotron-streaming.md) · [Omnilingual ASR](docs/models/omnilingual-asr.md) · [PersonaPlex](docs/models/personaplex.md) · [FireRedVAD](docs/models/fireredvad.md) · [Source Separation](docs/models/source-separation.md) · [MAGNeT](docs/models/magnet-music-gen.md)
+- **推論：** [Qwen3-ASR](docs/inference/qwen3-asr-inference.md) · [Parakeet TDT](docs/inference/parakeet-asr-inference.md) · [Parakeet Streaming](docs/inference/parakeet-streaming-asr-inference.md) · [Nemotron Streaming](docs/inference/nemotron-streaming-inference.md) · [Omnilingual ASR](docs/inference/omnilingual-asr-inference.md) · [TTS](docs/inference/qwen3-tts-inference.md) · [VibeVoice](docs/inference/vibevoice-inference.md) · [Forced Aligner](docs/inference/forced-aligner.md) · [Silero VAD](docs/inference/silero-vad.md) · [話者ダイアライゼーション](docs/inference/speaker-diarization.md) · [音声強調](docs/inference/speech-enhancement.md) · [MAGNeT](docs/inference/magnet-music-gen.md)
 - **リファレンス：** [共有プロトコル](docs/shared-protocols.md)
 
 ## キャッシュ設定

@@ -61,6 +61,10 @@ let package = Package(
             targets: ["VoxCPM2TTS"]
         ),
         .library(
+            name: "MAGNeTMusicGen",
+            targets: ["MAGNeTMusicGen"]
+        ),
+        .library(
             name: "OmnilingualASR",
             targets: ["OmnilingualASR"]
         ),
@@ -249,6 +253,18 @@ let package = Package(
             ]
         ),
         .target(
+            name: "MAGNeTMusicGen",
+            dependencies: [
+                "AudioCommon",
+                "MLXCommon",
+                .product(name: "MLX", package: "mlx-swift"),
+                .product(name: "MLXNN", package: "mlx-swift"),
+                .product(name: "MLXFast", package: "mlx-swift"),
+                .product(name: "MLXRandom", package: "mlx-swift"),
+                .product(name: "Transformers", package: "swift-transformers")
+            ]
+        ),
+        .target(
             name: "OmnilingualASR",
             dependencies: [
                 "AudioCommon",
@@ -326,6 +342,7 @@ let package = Package(
                 "KokoroTTS",
                 "VibeVoiceTTS",
                 "VoxCPM2TTS",
+                "MAGNeTMusicGen",
                 "MADLADTranslation",
                 "SpeechWakeWord",
                 "AudioCommon",
@@ -471,6 +488,14 @@ let package = Package(
             name: "VoxCPM2TTSTests",
             dependencies: [
                 "VoxCPM2TTS",
+                "AudioCommon",
+                .product(name: "MLX", package: "mlx-swift")
+            ]
+        ),
+        .testTarget(
+            name: "MAGNeTMusicGenTests",
+            dependencies: [
+                "MAGNeTMusicGen",
                 "AudioCommon",
                 .product(name: "MLX", package: "mlx-swift")
             ]

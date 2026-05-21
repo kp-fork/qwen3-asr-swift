@@ -16,6 +16,7 @@ public struct AudioCLI: ParsableCommand {
             EmbedSpeakerCommand.self,
             DenoiseCommand.self,
             SeparateCommand.self,
+            ComposeCommand.self,
             KokoroCommand.self,
             Qwen3TTSCoreMLCommand.self,
             VibeVoiceCommand.self,

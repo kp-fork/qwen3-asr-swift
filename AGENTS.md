@@ -135,6 +135,7 @@ The `speech` binary is the main entry point (`audio` is a deprecated alias that 
 .build/release/speech vad audio.wav                     # Voice activity detection
 .build/release/speech embed-speaker voice.wav           # Speaker embedding
 .build/release/speech denoise noisy.wav                 # Speech enhancement
+.build/release/speech compose "happy rock" -o music.wav # MAGNeT text-to-music (30s, 32 kHz)
 .build/release/speech kokoro "Hello" --voice af_heart   # Kokoro TTS (iOS)
 .build/release/speech qwen3-tts-coreml "Hello"          # Qwen3-TTS CoreML (6-model pipeline)
 ```
@@ -152,6 +153,7 @@ docs/
     tts-model.md                Qwen3-TTS architecture
     cosyvoice-tts.md            CosyVoice3 architecture
     voxcpm2-tts.md              VoxCPM2 architecture (48 kHz, voice cloning + voice design)
+    magnet-music-gen.md         MAGNeT music generation (T5 + EnCodec, masked parallel decoding)
     kokoro-tts.md               Kokoro-82M architecture
     parakeet-asr.md             Parakeet TDT architecture
     personaplex.md              PersonaPlex architecture
@@ -161,6 +163,7 @@ docs/
     parakeet-asr-inference.md   Parakeet TDT inference (CoreML)
     qwen3-tts-inference.md      TTS inference pipeline
     voxcpm2-inference.md        VoxCPM2 inference (48 kHz, --voxcpm2-variant bf16/int8/int4)
+    magnet-music-gen.md         MAGNeT music generation CLI + tuning
     forced-aligner.md           Forced alignment pipeline
     silero-vad.md               Silero VAD streaming
     fireredvad.md               FireRedVAD inference + tuning results
