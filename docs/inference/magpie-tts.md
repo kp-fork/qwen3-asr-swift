@@ -119,6 +119,15 @@ First-packet latency in streaming mode is ≈120 ms after model load.
 | INT4 | 247 MB | ~ 1.3 GB |
 | INT8 | 411 MB | ~ 1.6 GB |
 
+## Voice cloning — not supported
+
+Magpie has no zero-shot speaker conditioning in the model. Only the 5
+baked identities (Sofia / Aria / Jason / Leo / John Van Stan) ship in
+the bundle. The CLI rejects the shared `--voice-sample` / `--speaker` /
+`--instruct` flags with an actionable error pointing users at the
+`--magpie-speaker` flag or the engines that do support cloning
+(`qwen3`, `cosyvoice`, `voxcpm2`).
+
 ## Known limitations / follow-ups
 
 - **JA pitch accent** — without `pyopenjtalk` we use the heiban (acc=0)
@@ -129,8 +138,6 @@ First-packet latency in streaming mode is ≈120 ms after model load.
   correctly but occasionally misreads polyphones (rare characters with
   multiple readings). A bundled jieba-style dictionary would close the
   gap.
-- **Voice cloning** — Magpie has no zero-shot speaker conditioning; only
-  the 5 baked identities ship in the bundle.
 - **Streaming codec** is full-buffer-replay per chunk; a streaming-friendly
   codec state cache can drop streaming RTF below 0.3.
 - **FP16 bundle** is not on HuggingFace yet (export available locally in

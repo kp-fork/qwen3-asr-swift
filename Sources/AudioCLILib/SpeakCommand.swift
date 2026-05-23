@@ -194,6 +194,45 @@ public struct SpeakCommand: ParsableCommand {
             guard magpieVariant.lowercased() == "int4" || magpieVariant.lowercased() == "int8" else {
                 throw ValidationError("--magpie-variant must be int4 or int8 (got '\(magpieVariant)')")
             }
+            // Magpie has 5 baked speakers and no zero-shot speaker
+            // conditioning in the model — reject voice-cloning / speaker
+            // flags borrowed from the other engines so users don't think
+            // the cloning silently worked.
+            if voiceSample != nil {
+                throw ValidationError(
+                    "--engine magpie does not support --voice-sample. " +
+                    "Magpie has 5 baked speakers and no zero-shot cloning. " +
+                    "Use --magpie-speaker {sofia|aria|jason|leo|john} instead, " +
+                    "or use --engine qwen3 / cosyvoice / voxcpm2 for cloning.")
+            }
+            if speaker != nil {
+                throw ValidationError(
+                    "--engine magpie does not support --speaker " +
+                    "(that's a qwen3 CustomVoice flag). " +
+                    "Use --magpie-speaker {sofia|aria|jason|leo|john}.")
+            }
+            if instruct != nil {
+                throw ValidationError(
+                    "--engine magpie does not support --instruct " +
+                    "(style/instruction control is not in the Magpie model).")
+            }
+            if listSpeakers {
+                // Friendlier than a silent no-op: print the 5 baked
+                // speakers and return early.
+                print("Magpie has 5 baked speakers (use with --magpie-speaker):")
+                for spk in MagpieSpeaker.allCases {
+                    let cliName: String
+                    switch spk {
+                    case .sofia:       cliName = "sofia"
+                    case .aria:        cliName = "aria"
+                    case .jason:       cliName = "jason"
+                    case .leo:         cliName = "leo"
+                    case .johnVanStan: cliName = "john"
+                    }
+                    print("  - \(cliName)  (\(spk.displayName))")
+                }
+                throw ExitCode(0)
+            }
         }
     }
 

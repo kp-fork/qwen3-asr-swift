@@ -492,6 +492,55 @@ final class SpeakCommandTests: XCTestCase {
         let speak = try XCTUnwrap(cmd as? SpeakCommand)
         XCTAssertEqual(speak.batchSize, 8)
     }
+
+    // MARK: Magpie engine — validate that voice-cloning / qwen3-specific
+    // flags are rejected with a helpful error instead of silently ignored.
+    // Magpie has 5 baked speakers and no zero-shot conditioning in the
+    // model, so passing `--voice-sample` / `--speaker` / `--instruct`
+    // would otherwise let the user think cloning had worked.
+
+    // `parseAsRoot` runs `validate()` during parsing, so the error
+    // surfaces from the parse call rather than from a separate validate().
+    private func expectMagpieReject(_ args: [String], contains needle: String,
+                                      file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertThrowsError(try AudioCLI.parseAsRoot(args), file: file, line: line) { err in
+            XCTAssertTrue("\(err)".contains(needle),
+                          "expected error containing '\(needle)', got: \(err)",
+                          file: file, line: line)
+        }
+    }
+
+    func testMagpieRejectsVoiceSample() {
+        expectMagpieReject(
+            ["speak", "hi", "--engine", "magpie", "--voice-sample", "ref.wav"],
+            contains: "--voice-sample")
+    }
+
+    func testMagpieRejectsQwen3SpeakerFlag() {
+        expectMagpieReject(
+            ["speak", "hi", "--engine", "magpie", "--speaker", "someone"],
+            contains: "--speaker")
+    }
+
+    func testMagpieRejectsInstruct() {
+        expectMagpieReject(
+            ["speak", "hi", "--engine", "magpie", "--instruct", "be friendly"],
+            contains: "--instruct")
+    }
+
+    func testMagpieAcceptsBakedSpeakers() throws {
+        for spk in ["sofia", "aria", "jason", "leo", "john"] {
+            XCTAssertNoThrow(try AudioCLI.parseAsRoot(
+                ["speak", "hi", "--engine", "magpie", "--magpie-speaker", spk]),
+                             "speaker \(spk) should validate")
+        }
+    }
+
+    func testMagpieRejectsUnknownSpeaker() {
+        expectMagpieReject(
+            ["speak", "hi", "--engine", "magpie", "--magpie-speaker", "elvis"],
+            contains: "--magpie-speaker")
+    }
 }
 
 // MARK: - RespondCommand
